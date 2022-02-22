@@ -1,0 +1,83 @@
+import tvm
+from tvm import relay
+import torch
+from torch import nn
+from tvm import te
+from tvm.contrib import graph_executor
+import numpy as np
+from tvm.contrib import utils
+import os
+from time import perf_counter
+
+batch, sentence_length, embedding_dim = 20, 5, 10
+input_shape = (batch, sentence_length, embedding_dim)
+input = torch.randn(input_shape)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+class Net(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.layernorm = nn.LayerNorm(embedding_dim)
+
+    def forward(self, x):
+        x = self.layernorm(x)
+        return x
+
+net = nn.LayerNorm(embedding_dim)
+net.to(device)
+# net.half()
+net.eval()
+
+input = input.to(device)
+script_module = torch.jit.trace(net, input)
+
+input_name = "input"  # the input name can be be arbitrary for PyTorch frontend.
+input_shapes = [(input_name, (batch, sentence_length, embedding_dim))]
+mod, params = relay.frontend.from_pytorch(script_module, input_shapes)
+
+# set show_meta_data=True if you want to show meta data
+# print(mod.astext(show_meta_data=False))
+
+target = tvm.target.cuda(arch="sm_80")
+with tvm.transform.PassContext(opt_level=3):
+    lib = relay.build_module.build(mod, target=target, params=params)
+
+dev = tvm.cuda()
+# create module
+input = input.cpu()
+module = graph_executor.GraphModule(lib["default"](dev))
+# set input and parameters
+module.set_input("input", input)
+
+n = 100
+module.run()
+for i in range(n):
+    start = perf_counter()
+    module.run()
+    stop = perf_counter()
+print(f"Elapsed time for tvm {net.__class__.__name__}: {(stop-start)*1000/n} ms")
+
+# get tvm output
+output_shape = input_shape
+out_tvm = module.get_output(0, tvm.nd.empty(output_shape)).numpy()
+
+input = input.to(device)
+script_module(input)
+for i in range(n):
+    start = perf_counter()
+    script_module(input)
+    stop = perf_counter()
+print(f"Elapsed time for pytorch {net.__class__.__name__}: {(stop-start)*1000/n} ms")
+
+# get pt output
+out_pt = script_module(input)
+out_pt = out_pt.cpu().detach().numpy()
+
+# check results
+np.testing.assert_allclose(out_pt, out_tvm, rtol=1e-3)
+
+# # save the graph, lib and params into separate files
+# if False:
+#     path_lib = os.path.join(os.path.realpath(__file__), "tvm_module.tar")
+#     lib.export_library(path_lib)
+#     print(path_lib)
