@@ -7,10 +7,13 @@ from tvm.contrib import cublas
 
 target = tvm.target.Target('cuda')
 
+M = 2048
+K = 2048
 N = 2048
+
 dtype = 'float32'
-A = te.placeholder((N, N), name='data', dtype=dtype)
-B = te.placeholder((N, N), name='kernel', dtype=dtype)
+A = te.placeholder((M, K), name='data', dtype=dtype)
+B = te.placeholder((K, N), name='kernel', dtype=dtype)
 C = cublas.matmul(A, B, False, True, dtype=dtype)
 
 sch = te.create_schedule(C.op)
@@ -18,8 +21,8 @@ args = [A, B, C]
 func = tvm.build(sch, args, target)
 
 # Check correctness
-data_np = np.random.uniform(size=(N, N)).astype(np.float32)
-weight_np = np.random.uniform(size=(N, N)).astype(np.float32)
+data_np = np.random.uniform(size=(M, K)).astype(np.float32)
+weight_np = np.random.uniform(size=(K, N)).astype(np.float32)
 out_np = np.matmul(data_np, weight_np.T)
 
 ctx = tvm.cuda()
@@ -36,4 +39,4 @@ evaluator = func.time_evaluator(func.entry_name, ctx, number=100, repeat=10)
 time = np.median(evaluator(data_tvm, weight_tvm, out_tvm).results)
 print("shape", data_np.shape, weight_np.shape)
 print("Execution time of this operator: %.3f ms" % (time * 1000))
-print("Speed: %.3f TFLOPS" % (2 * (N**3) / time / 1e12))
+print("Speed: %.3f TFLOPS" % (2 * (M*K*N) / time / 1e12))

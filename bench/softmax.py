@@ -10,13 +10,15 @@ import os
 from time import perf_counter
 import time
 
-dtype = torch.float32
-batch, sentence_length, embedding_dim = 10, 1024, 1024
-input_shape = (batch, sentence_length, embedding_dim)
+dtype = torch.float16
+N = 20480
+input_shape = (1, N)
 input = torch.randn(input_shape, dtype=dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-net = nn.LayerNorm(embedding_dim, dtype=dtype)
+net = nn.Softmax()
+if dtype == torch.float16:
+    net = net.half()
 net.to(device)
 net.eval()
 
@@ -24,7 +26,7 @@ input = input.to(device)
 script_module = torch.jit.trace(net, input)
 
 input_name = "input"
-input_shapes = [(input_name, (batch, sentence_length, embedding_dim))]
+input_shapes = [(input_name, input_shape)]
 mod, params = relay.frontend.from_pytorch(script_module, input_shapes)
 
 # set show_meta_data=True if you want to show meta data
