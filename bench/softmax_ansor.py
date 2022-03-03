@@ -4,25 +4,27 @@ import tvm
 from tvm import te, auto_scheduler, topi
 import torch
 
+N = 2048
+input_shape = (2, N)
+
 @auto_scheduler.register_workload
-def softmax_layer(N):
-    data = te.placeholder((N, ), name='data')
+def softmax_layer():
+    data = te.placeholder(input_shape, name='data')
     out = topi.nn.softmax(data)
     return [data, out]
 
 target = tvm.target.Target("cuda")
-N = 20480
-input_shape = (1, N)
 
 task = auto_scheduler.SearchTask(
-    func=softmax_layer, args=(N, ), target=target
+    func=softmax_layer, target=target
 )
 
 # Inspect the computational graph
 # print("Computational DAG:")
 # print(task.compute_dag)
 
-log_file = f"softmax-{N}.json"
+s = "-".join(map(str, input_shape))
+log_file = f"softmax-{s}.json"
 
 if not os.path.exists(log_file):
     measure_ctx = auto_scheduler.LocalRPCMeasureContext(min_repeat_ms=300)
@@ -41,7 +43,7 @@ sch, args = task.apply_best(log_file)
 func = tvm.build(sch, args, target)
 
 # Check correctness
-data_np = np.random.uniform(size=(N)).astype(np.float32)
+data_np = np.random.uniform(size=input_shape).astype(np.float32)
 ctx = tvm.cuda()
 data_tvm = tvm.nd.array(data_np, device=ctx)
 out_tvm = tvm.nd.array(np.ones_like(data_np), device=ctx)
@@ -58,4 +60,4 @@ evaluator = func.time_evaluator(func.entry_name, ctx, number=100, repeat=10)
 time = np.median(evaluator(data_tvm, out_tvm).results)
 print("shape", data_np.shape)
 print("Execution time of this operator: %.3f ms" % (time * 1000))
-print("Speed: %.3f TFLOPS" % (2 * (N**3) / time / 1e12))
+print("Speed: %.3f TFLOPS" % (2 * (N**2) / time / 1e12))

@@ -11,7 +11,7 @@ from time import perf_counter
 import time
 
 dtype = torch.float32
-batch, sentence_length, embedding_dim = 10, 1024, 1024
+batch, sentence_length, embedding_dim = 8096, 1024, 1024
 input_shape = (batch, sentence_length, embedding_dim)
 input = torch.randn(input_shape, dtype=dtype)
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
