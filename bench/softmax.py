@@ -12,6 +12,11 @@ import time
 from tvm.driver import tvmc
 
 USE_ANSOR=True
+dtype = torch.float32
+if dtype == torch.float16:
+    tp_dtype = "float16"
+else:
+    tp_dtype = "float32"
 
 def auto_scheduler_tune(mod, params, target, log_file):
     if os.path.exists(log_file):
@@ -47,13 +52,6 @@ def auto_scheduler_tune(mod, params, target, log_file):
 
     tuner = auto_scheduler.TaskScheduler(tasks, task_weights)
     tuner.tune(tuning_opt)
-
-
-dtype = torch.float32
-if dtype == torch.float16:
-    tp_dtype = "float16"
-else:
-    tp_dtype = "float32"
 
 input_shape = (2, 2048, 2048)
 np_input = (np.random.uniform(size=input_shape)).astype(tp_dtype)
